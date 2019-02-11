@@ -1,6 +1,6 @@
 NAMESPACE=default
 IMAGENAME=quay.io/example/pipeline-operator
-
+VERSION=0.0.1
 
 # kernel-style V=1 build verbosity
 ifeq ("$(origin V)", "command line")
@@ -15,7 +15,7 @@ endif
 
 PKGS = $(shell go list ./... | grep -v /vendor/)
 
-all:
+all: dep k8s build 
 	
 
 format:
@@ -30,10 +30,18 @@ dep-update:
 clean:
 	$(Q)rm -rf build
 
-build:
+build: 
 	operator-sdk build $(IMAGENAME)
 
-test: 
+test: dep k8s
 	operator-sdk up local --namespace=$(NAMESPACE)
 
-.PHONY: all test format dep clean
+k8s:
+	sed -i 's|REPLACE_IMAGE|$(IMAGENAME):$(VERSION)|g' deploy/operator.yaml
+	sed -i "s|REPLACE_NAMESPACE|$(NAMESPACE)|g" deploy/role_binding.yaml
+	- kubectl create -f deploy/service_account.yaml
+	- kubectl create -f deploy/role.yaml
+	- kubectl create -f deploy/role_binding.yaml
+	- kubectl create -f deploy/operator.yaml
+
+.PHONY: all test format dep clean k8s

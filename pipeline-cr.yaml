@@ -1,0 +1,47 @@
+apiVersion: pipeline.chrisprocter.co.uk/v1alpha1
+kind: Pipeline
+metadata:
+  name: example-pipeline
+spec:
+  envname: PIPELINE
+  stages:
+  - name: stage1
+    job:        
+      metadata:
+        name:  stage1
+        labels:
+          app: stage1
+      template:
+        spec:
+          containers:
+          - name: stage
+            image: docker-registry-default.router.default.svc.cluster.local/default/pipeline:latest
+            command: ["/bin/sh","/entrypoint.sh"]
+          restartPolicy: Never
+  - name: stage2
+    job:         
+      metadata:
+        name: stage2
+        labels:
+          app: stage2
+      template:
+        spec:
+          containers:
+          - name: stage
+            image: docker-registry-default.router.default.svc.cluster.local/default/pipeline:latest
+            command: ["/bin/sh","/entrypoint.sh"]
+          restartPolicy: Never
+
+  - name: stage3
+    job:         
+      metadata:
+        name: stage3
+        labels:
+          app: stage3
+      template:
+        spec:
+          containers:
+          - name: stage
+            image: docker-registry-default.router.default.svc.cluster.local/default/pipeline:latest
+            command: ["/bin/sh","/entrypoint.sh"]
+          restartPolicy: Never

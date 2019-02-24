@@ -20,6 +20,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
         //batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	clientcore "k8s.io/client-go/kubernetes/typed/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
 var log = logf.Log.WithName("controller_pipeline")
@@ -116,17 +118,18 @@ func (r *ReconcilePipeline) Reconcile(request reconcile.Request) (reconcile.Resu
 	}
 
 	podList := &corev1.PodList{}
+
 	lbs := map[string]string{
 		"app":     pipeline.Name,
 	}
 	labelSelector := labels.SelectorFromSet(lbs)
 	listOps := &client.ListOptions{Namespace: pipeline.Namespace, LabelSelector: labelSelector}
+
 	if err = r.client.List(context.TODO(), listOps, podList); err != nil {
         	return reconcile.Result{}, err
 	}
 
-
-    	for _, pod := range podList.Items {
+   	for _, pod := range podList.Items {
 		i := stagename[pod.ObjectMeta.Name]
 		stages[i] =  pod.Status.Phase
 		log.Info("status:","pod.ObjectMeta.Name =",pod.ObjectMeta.Name,"phase =",pod.Status.Phase,"i",i,"value",stages[i])
@@ -138,7 +141,29 @@ func (r *ReconcilePipeline) Reconcile(request reconcile.Request) (reconcile.Resu
 		switch s := stages[j]; s {
 		case "":
 			if flag == 1 {
-				err = r.startPod(pipeline,j)
+				pod := newPodForStage(pipeline,j)
+				if err := controllerutil.SetControllerReference(pipeline, pod, r.scheme); err != nil {
+					return reconcile.Result{}, err
+			 	}
+				if j > 0 {
+					logs,err := getLogsFromPod(pipeline ,j-1)
+					if err != nil {
+						return reconcile.Result{}, err
+					}
+					envname := pipeline.Name
+					if pipeline.Spec.Envname != "" {
+						envname = pipeline.Spec.Envname
+					}
+					log.Info("envname",envname,pipeline.Spec.Envname)
+					env := corev1.EnvVar{Name: envname ,Value: logs}
+					pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env,env)
+				}
+       				err := r.client.Create(context.TODO(), pod)
+			        if err != nil {
+					log.Error(err, "Failed to create job", "Stage.name", pipeline.Spec.Stages[j].Name)
+					return reconcile.Result{}, err
+				}
+				//err = r.startPod(pipeline,j)
 				if err != nil {
 					return reconcile.Result{}, err
 				}
@@ -160,6 +185,26 @@ func (r *ReconcilePipeline) Reconcile(request reconcile.Request) (reconcile.Resu
 
 	}
 	return reconcile.Result{}, nil
+}
+
+
+func getLogsFromPod(pipeline *pipelinev1alpha1.Pipeline,j int) (string,error) {
+	cfg, err := config.GetConfig()
+	if err != nil {
+		log.Error(err, "")
+        	return "", err
+	}
+	cc,_ := clientcore.NewForConfig(cfg)
+	pods := cc.Pods(pipeline.Namespace)
+	opt :=  &corev1.PodLogOptions{}
+	logmsgs,err := pods.GetLogs(pipeline.Spec.Stages[j].Name,opt).Do().Raw()
+	if err != nil {
+		log.Error(err, "")
+        	return "", err
+	}
+	//log.Info(string(logmsgs))
+
+	return string(logmsgs),nil
 }
 
 
